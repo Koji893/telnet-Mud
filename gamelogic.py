@@ -5,7 +5,9 @@ import commands
 from classes import *
 from classes import Player
 from state import game
+import db
 #This dict comprehension generates the command dictionary from the command.py file
+db = db.db()
 command_dict = {
     name: func
     for name, func in inspect.getmembers(commands, inspect.isfunction)
@@ -57,14 +59,29 @@ async def commandProcessor(data,player,game):
         await player.client.send(result)
 
 async def handle_client(client):
-    await client.send("welcome to risk\n")
-    await client.send("What is your name? ")
-    name = await client.receive()
-    client.userdata['name'] = name
-    await client.send(f"Hello, {name}!\n")
-    player = Player(name,client)
-    game.add_player(player)
-    print([p.name for p in game.players])
+    await client.send('\033[2J\033[H')
+    await client.send("welcome to the mud use login (username) (password) to login. Use createUser username password to create a new character")
+    player = None
+    while player is None:
+        await client.send("\n>")
+        data = await client.receive()
+        command,*args = data.strip().split()
+        if command == 'login':
+            if len(args) == 2:
+                username, password = args[0], args[1]
+                where_clause=f"username = '{username}' AND password = '{password}'"
+                if db.query('players',where_clause=where_clause) ==True:
+                    player = Player(username,client)
+            else: client.send("login failed")
+        if command == 'createUser':
+            if len(args) == 2:
+                username, password = args[0],args[1]
+                where_clause=f"username	= '{username}' AND password = '{password}'"
+                if db.query('players',where_clause=where_clause) == False:
+                    db.insert('players',['username','password'],[username,password])
+                    player = Player(username,client)
+                else: client.send('this user already exists')
+            else: client.send('this needs 2 args')
     while True:
         await client.send(">")
         data = await client.receive()
