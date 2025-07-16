@@ -1,0 +1,23 @@
+import asyncio
+from db import db
+from classes import Player
+class LoginManager:
+    def __init__(self,db):
+        self.db = db
+    async def login(self,username,password):
+        Columns = ['username','password']
+        whereClause = 'username=? AND password=?'
+        userData = self.db.fetchone('players',Columns,whereClause,(username,password))
+        if userData and userData['username'] == username and userData['password'] == password:
+            return True
+        else:
+            return False
+    async def createPlayer(self,username,password):
+        entry = self.db.exists("players","username=?",(username,))
+        if entry == False:
+            Columns = ['username','password']
+            Values = [username , password]
+            self.db.insert('players',Columns,Values)
+            return True
+        else:
+            return False

@@ -6,8 +6,10 @@ from classes import *
 from classes import Player
 from state import game
 import db
+from loginManager import LoginManager
 #This dict comprehension generates the command dictionary from the command.py file
 db = db.db()
+lm = LoginManager(db)
 command_dict = {
     name: func
     for name, func in inspect.getmembers(commands, inspect.isfunction)
@@ -20,30 +22,13 @@ async def command(cmd,player,*args):
 async def commandProcessor(data,player,game):
     if data == "": data = "invalid" 
     cmd,*args = data.strip().split()
-    if player.bound["Status"] == True:
-        reason = player.bound["Reason"]
-        print(type(reason))
-        allowed_cmds = game.allowed_cmd[reason]
-        if cmd in allowed_cmds:
-            result = await command(cmd,player,*args)
-        else:
-            result = {'message': "that command is not allowed right now."}
-    else:
-        result = await command(cmd,player,*args)
+    result = await command(cmd,player,*args)
     print(f"Command Processor Result: {result=}")
     print(game.players)
     if isinstance(result,dict):
         scope = result.get("scope","player")
         message = result.get("message","") + '\n'
         if scope == "all":
-            '''
-            for p in allPlayers:
-                try:
-                    print(p.client)
-                    await p.client.send(message)
-                except Exception as e:
-                    print(f"Error sending to {p.name}: {e}")
-                    '''
             await game.broadcast(message)
         elif scope == "target":
             target_name = result.get("target")
@@ -60,38 +45,40 @@ async def commandProcessor(data,player,game):
 
 async def handle_client(client):
     await client.send('\033[2J\033[H')
-    await client.send("welcome to the mud use login (username) (password) to login. Use createUser username password to create a new character")
+    await client.send("welcome to the mud use login (username) (password) to login. Use createUser username password to create a new character\n")
     player = None
     while player is None:
-        await client.send("\n>")
-        data = await client.receive()
-        command,*args = data.strip().split()
-        if command == 'login':
+        try:
+            await client.send(">")
+            data = await client.receive()
+            if not data: data = 'invalid'
+            cmd, *args = data.strip().split()
             if len(args) == 2:
-                username, password = args[0], args[1]
-                where_clause=f"username = '{username}' AND password = '{password}'"
-                if db.query('players',where_clause=where_clause) ==True:
-                    player = Player(username,client)
-            else: client.send("login failed")
-        if command == 'createUser':
-            if len(args) == 2:
-                username, password = args[0],args[1]
-                where_clause=f"username	= '{username}' AND password = '{password}'"
-                if db.query('players',where_clause=where_clause) == False:
-                    db.insert('players',['username','password'],[username,password])
-                    player = Player(username,client)
-                else: client.send('this user already exists')
-            else: client.send('this needs 2 args')
+                username ,password = args[0],args[1]
+                if cmd == 'login':
+                   if await lm.login(username,password) == True: player = Player(username,client)
+                   else: await client.send('that username or password is incorect')
+                elif cmd == 'createUser':
+                   if await lm.createPlayer(username,password) == True: player = Player(username,client)
+                   else: await client.send('that username is not available')
+            else:
+                await client.send('this command requires 2 args')
+        except ValueError as e:
+           print('error')
     while True:
-        await client.send(">")
-        data = await client.receive()
-        #if not data:
+        try:
+            await client.send(">")
+            data = await client.receive()
+            if not data: data = 'invalid'
+                
             #break
-        if data.lower() in ('quit', 'exit'):      
+            if data.lower() in ('quit', 'exit'):      
+                break
+            await commandProcessor(data,player,game)
+        except ValueError as e:
+            print('e')
+            print(f"{username} disconnected.")
             break
-        await commandProcessor(data,player,game)
-    print(f"{name} disconnected.")
-
 async def main():
     server = Server('0.0.0.0', 1234, handle_client)
     await server.start()
